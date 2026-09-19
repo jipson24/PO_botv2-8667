@@ -1,0 +1,139 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-elevated: var(--elevated);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-call: var(--call);
+  --color-put: var(--put);
+  --color-gold: var(--gold);
+  --color-info: var(--info);
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  --radius: 0.5rem;
+  --background: #08090c;
+  --foreground: #f2f4f8;
+  --card: #10131a;
+  --card-foreground: #f2f4f8;
+  --elevated: #161a24;
+  --popover: #10131a;
+  --popover-foreground: #f2f4f8;
+  --primary: #00e58a;
+  --primary-foreground: #04120c;
+  --secondary: #161a24;
+  --secondary-foreground: #f2f4f8;
+  --muted: #161a24;
+  --muted-foreground: #8a93a6;
+  --accent: #161a24;
+  --accent-foreground: #f2f4f8;
+  --destructive: #ff3b5c;
+  --border: #222735;
+  --input: #222735;
+  --ring: #00e58a;
+  --call: #00e58a;
+  --put: #ff3b5c;
+  --gold: #f5c451;
+  --info: #4d8dff;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(circle at 12% -10%, rgba(0, 229, 138, 0.07), transparent 45%),
+      radial-gradient(circle at 92% 0%, rgba(77, 141, 255, 0.06), transparent 40%);
+    background-attachment: fixed;
+  }
+  /* Тонкая сетка терминала на фоне */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0b0d12;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #232936;
+    border-radius: 6px;
+  }
+}
+
+@layer utilities {
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .glow-call {
+    box-shadow: 0 0 0 1px rgba(0, 229, 138, 0.35), 0 8px 32px -12px rgba(0, 229, 138, 0.45);
+  }
+  .glow-put {
+    box-shadow: 0 0 0 1px rgba(255, 59, 92, 0.35), 0 8px 32px -12px rgba(255, 59, 92, 0.45);
+  }
+  .rise {
+    animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .pulse-dot {
+    animation: pulseDot 1.8s ease-in-out infinite;
+  }
+  @keyframes pulseDot {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
+  }
+}
