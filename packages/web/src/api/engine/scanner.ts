@@ -5,6 +5,7 @@ import { getCandleSet, isStale, toFeedSymbol } from "../market/candles";
 import { ssidLooksLikeCookie } from "../market/po-feed";
 import { getAssets } from "../market/pocket-option";
 import { analyze } from "../strategy/analyze";
+import { buildSnapshot } from "../strategy/snapshot";
 import { getSettings } from "./store";
 import { publishSignal } from "./telegram";
 
@@ -220,6 +221,22 @@ export async function runScan(opts: { publish?: boolean } = {}): Promise<ScanOut
         continue;
       }
 
+      const lowPayout = asset.payout < settings.minPayout || asset.payout > settings.maxPayout;
+      // Архив входа: по нему ежедневный отчёт разбирает причины убытков.
+      const snapshot = buildSnapshot({
+        set,
+        analysis: result,
+        asset: {
+          symbol: asset.symbol,
+          name: asset.name,
+          isOtc: asset.isOtc,
+          payout: asset.payout,
+        },
+        lowPayout,
+        settings,
+        entryAt,
+      });
+
       const [signal] = await db
         .insert(schema.signals)
         .values({
@@ -229,7 +246,7 @@ export async function runScan(opts: { publish?: boolean } = {}): Promise<ScanOut
           confidence: result.confidence,
           score: result.score,
           payout: asset.payout,
-          lowPayout: asset.payout < settings.minPayout || asset.payout > settings.maxPayout,
+          lowPayout,
           price: result.price,
           expirySeconds: result.expirySeconds,
           entryAt,
@@ -239,6 +256,9 @@ export async function runScan(opts: { publish?: boolean } = {}): Promise<ScanOut
           triggerM5: result.triggerM5,
           reasons: result.reasons,
           details: result.details,
+          factors: result.factors,
+          snapshot,
+          tradeDay: snapshot.tradeDay,
         })
         .returning();
 

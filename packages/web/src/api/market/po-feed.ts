@@ -188,6 +188,40 @@ export function feedState(): {
   return { state, note: stateNote, lastPayloadAt, authedAt, clockSkewSec };
 }
 
+export type FeedStateChange = { state: FeedState; prev: FeedState; note: string };
+type FeedWatcher = (change: FeedStateChange) => void;
+
+/**
+ * Наблюдатели живут в globalThis: при HMR Vite подменяет модуль, и подписка,
+ * сделанная при старте движка, иначе потерялась бы.
+ */
+const watchScope = globalThis as unknown as { __poFeedWatchers?: Set<FeedWatcher> };
+watchScope.__poFeedWatchers ??= new Set<FeedWatcher>();
+const watchers = watchScope.__poFeedWatchers;
+
+/** Подписка на смену состояния фида. Возвращает функцию отписки. */
+export function watchFeedState(cb: FeedWatcher): () => void {
+  watchers.add(cb);
+  return () => {
+    watchers.delete(cb);
+  };
+}
+
+/** Единственная точка смены состояния — отсюда уходят события наблюдателям. */
+function setState(next: FeedState, note = "") {
+  const prev = state;
+  state = next;
+  stateNote = note;
+  if (prev === next) return;
+  for (const cb of watchers) {
+    try {
+      cb({ state: next, prev, note });
+    } catch (error) {
+      console.error("[po-feed] наблюдатель состояния упал:", (error as Error).message);
+    }
+  }
+}
+
 /** Сдвиг часов брокера относительно реального UTC, в секундах. */
 export function poClockSkew(): number {
   return clockSkewSec;
@@ -246,8 +280,7 @@ function scheduleReconnect() {
 
 function deliver(asset: string | null, candles: Candle[]) {
   lastPayloadAt = Date.now();
-  state = "live";
-  stateNote = "";
+  setState("live");
   if (asset) {
     const exact = listeners.get(asset);
     if (exact) {
@@ -283,8 +316,7 @@ function connect(): Promise<void> {
 
   const auth = authMessage();
   if (!auth) {
-    state = "unauthorized";
-    stateNote = "POCKET_OPTION_SSID не задан";
+    setState("unauthorized", "POCKET_OPTION_SSID не задан");
     return Promise.reject(new Error(stateNote));
   }
 
@@ -294,8 +326,7 @@ function connect(): Promise<void> {
     reconnectTimer = null;
   }
 
-  state = "connecting";
-  stateNote = "";
+  setState("connecting");
   const url = envFlag("POCKET_OPTION_DEMO", true) ? WS_DEMO : WS_LIVE;
   const ws = new WS(url, { headers: { Origin: "https://pocketoption.com", "User-Agent": UA } });
   ws.binaryType = "arraybuffer";
@@ -310,9 +341,8 @@ function connect(): Promise<void> {
 
   const handlePayload = (event: string, text: string) => {
     if (event === "successauth") {
-      state = "live";
-      stateNote = "";
       authedAt = Date.now();
+      setState("live");
       reconnectDelayMs = RECONNECT_MIN_MS;
       return;
     }
@@ -410,8 +440,10 @@ function connect(): Promise<void> {
   ws.addEventListener("close", () => {
     if (socket === ws) socket = null;
     if (state !== "unauthorized") {
-      state = keepAlive ? "connecting" : "idle";
-      stateNote = keepAlive ? "переподключение" : "соединение закрыто";
+      setState(
+        keepAlive ? "connecting" : "idle",
+        keepAlive ? "переподключение" : "соединение закрыто",
+      );
     }
     settleAll(new Error("Pocket Option: соединение закрыто"));
     scheduleReconnect();
@@ -420,8 +452,7 @@ function connect(): Promise<void> {
   ws.addEventListener("error", () => {
     if (socket === ws) socket = null;
     if (state !== "unauthorized") {
-      state = keepAlive ? "connecting" : "error";
-      stateNote = keepAlive ? "переподключение" : "ошибка WebSocket";
+      setState(keepAlive ? "connecting" : "error", keepAlive ? "переподключение" : "ошибка WebSocket");
     }
     settleAll(new Error("Pocket Option: ошибка WebSocket"));
     scheduleReconnect();
@@ -525,8 +556,7 @@ export async function poCandles(asset: string, period = 300, bars = 300): Promis
   const candles = [...merged.values()].sort((a, b) => a.time - b.time);
   if (!candles.length) {
     if (state !== "live") {
-      state = "unauthorized";
-      stateNote = "PO не отвечает на запрос свечей — нужен рабочий cookie ssid";
+      setState("unauthorized", "PO не отвечает на запрос свечей — нужен рабочий cookie ssid");
     }
     throw new Error(`${asset}: PO не отдал свечи (нужен рабочий cookie ssid)`);
   }

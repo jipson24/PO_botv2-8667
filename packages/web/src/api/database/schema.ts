@@ -43,8 +43,18 @@ export const signals = sqliteTable(
     triggerM5: text("trigger_m5").notNull(),
     reasons: text("reasons", { mode: "json" }).notNull(),
     details: text("details", { mode: "json" }).notNull(),
+    /** Факторы голосования с весами — как есть из analyze(). */
+    factors: text("factors", { mode: "json" }),
+    /** Полный слепок входа: свечи, индикаторы, настройки движка на момент сигнала. */
+    snapshot: text("snapshot", { mode: "json" }),
+    /** Киевский торговый день входа, «2026-09-20» — по нему группируется архив. */
+    tradeDay: text("trade_day"),
+    /** pending | win | loss | draw | unknown */
     outcome: text("outcome").notNull().default("pending"),
     resultPrice: real("result_price"),
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    /** Как получена цена экспирации либо почему не получена. */
+    resolveNote: text("resolve_note"),
     sentToTelegram: integer("sent_to_telegram", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -53,8 +63,34 @@ export const signals = sqliteTable(
   (t) => [
     index("signals_created_idx").on(t.createdAt),
     index("signals_symbol_idx").on(t.symbol),
+    index("signals_trade_day_idx").on(t.tradeDay),
+    index("signals_outcome_idx").on(t.outcome),
   ],
 );
+
+/** Ежедневные отчёты: по одному на киевский день, пересоздаются при запросе. */
+export const dailyReports = sqliteTable("daily_reports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  /** «2026-09-20» — киевские сутки 00:00–23:59. */
+  day: text("day").notNull().unique(),
+  trades: integer("trades").notNull().default(0),
+  wins: integer("wins").notNull().default(0),
+  losses: integer("losses").notNull().default(0),
+  draws: integer("draws").notNull().default(0),
+  pending: integer("pending").notNull().default(0),
+  /** Винрейт в процентах по решённым сделкам: win / (win + loss). */
+  winrate: real("winrate").notNull().default(0),
+  bestWinStreak: integer("best_win_streak").notNull().default(0),
+  worstLossStreak: integer("worst_loss_streak").notNull().default(0),
+  /** Разбор дня: что работало, что подводило, причины и предложения. */
+  analysis: text("analysis", { mode: "json" }).notNull(),
+  /** Готовый текст отчёта — уходит в Telegram и показывается в дашборде. */
+  summary: text("summary").notNull(),
+  sentToTelegram: integer("sent_to_telegram", { mode: "boolean" }).notNull().default(false),
+  generatedAt: integer("generated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
 
 /** Подписчики Telegram. */
 export const subscribers = sqliteTable("subscribers", {

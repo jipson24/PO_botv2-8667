@@ -28,6 +28,7 @@ export function SignalCard({
   const left = countdown(signal.expiresAt);
   const live = left !== "истёк";
   const reasons = toArray(signal.reasons);
+  const status = outcomeStatus(signal);
 
   return (
     <article
@@ -81,8 +82,9 @@ export function SignalCard({
         <Field label="Экспирация" value={timeHMS(signal.expiresAt)} />
         <Field
           label={live ? "Осталось" : "Статус"}
-          value={live ? left : signal.outcome === "pending" ? "закрыт" : signal.outcome}
-          tone={live ? (isCall ? "call" : "put") : "muted"}
+          value={live ? left : status.text}
+          tone={live ? (isCall ? "call" : "put") : status.tone}
+          hint={live ? undefined : status.hint}
         />
       </div>
 
@@ -129,14 +131,49 @@ export function SignalCard({
   );
 }
 
+/** Итог сделки словами: результат важнее слова «закрыт». */
+function outcomeStatus(signal: Signal): {
+  text: string;
+  tone: "muted" | "call" | "put" | "gold";
+  hint?: string;
+} {
+  const result = signal.resultPrice == null ? null : price(signal.resultPrice);
+  switch (signal.outcome) {
+    case "win":
+      return {
+        text: "🟢 Закрыт (профит)",
+        tone: "call",
+        hint: result ? `экспирация ${result} · +${signal.payout}%` : `+${signal.payout}% к ставке`,
+      };
+    case "loss":
+      return {
+        text: "🔴 Закрыт (убыток)",
+        tone: "put",
+        hint: result ? `экспирация ${result} · −100%` : "−100% ставки",
+      };
+    case "draw":
+      return {
+        text: "⚪ Закрыт (ничья)",
+        tone: "muted",
+        hint: result ? `экспирация ${result} · возврат ставки` : "цена не изменилась",
+      };
+    case "pending":
+      return { text: "⏳ Ждёт итога", tone: "gold", hint: "цена экспирации ещё не получена" };
+    default:
+      return { text: "⚠️ Итог неизвестен", tone: "muted", hint: "нет цены на момент экспирации" };
+  }
+}
+
 function Field({
   label,
   value,
   tone = "muted",
+  hint,
 }: {
   label: string;
   value: string;
-  tone?: "muted" | "call" | "put";
+  tone?: "muted" | "call" | "put" | "gold";
+  hint?: string;
 }) {
   return (
     <div className="rounded-lg border border-border/60 bg-elevated/60 px-2.5 py-2">
@@ -146,10 +183,16 @@ function Field({
           "num mt-0.5 text-sm font-semibold",
           tone === "call" && "text-call",
           tone === "put" && "text-put",
+          tone === "gold" && "text-gold",
         )}
       >
         {value}
       </div>
+      {hint && (
+        <div className="mt-0.5 truncate text-[10px] text-muted-foreground" title={hint}>
+          {hint}
+        </div>
+      )}
     </div>
   );
 }

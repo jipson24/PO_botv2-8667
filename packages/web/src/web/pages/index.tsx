@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Settings2,
   Signal as SignalIcon,
+  BarChart3,
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,16 +18,18 @@ import { SignalCard } from "../components/signal-card";
 import { PairsTable } from "../components/pairs-table";
 import { ScanLog } from "../components/scan-log";
 import { SettingsPanel } from "../components/settings-panel";
+import { StatsPanel } from "../components/stats-panel";
 import { agoLabel, expiryLabel } from "../lib/format";
 import { useOverview, useResendSignal, useScanNow, useSignals } from "../queries/signals";
 
-type Tab = "signals" | "pairs" | "settings";
+type Tab = "signals" | "pairs" | "settings" | "statistics";
 type Filter = "all" | "call" | "put";
 
 const TABS: { id: Tab; label: string; icon: typeof SignalIcon }[] = [
   { id: "signals", label: "Сигналы", icon: SignalIcon },
   { id: "pairs", label: "Пары", icon: Activity },
   { id: "settings", label: "Настройки", icon: Settings2 },
+  { id: "statistics", label: "Статистика", icon: BarChart3 },
 ];
 
 function Index() {
@@ -252,6 +255,8 @@ function Index() {
             <ScanLog />
           </div>
         )}
+
+        {tab === "statistics" && <StatsPanel />}
       </main>
     </div>
   );
