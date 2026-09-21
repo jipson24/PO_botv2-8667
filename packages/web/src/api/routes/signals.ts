@@ -4,6 +4,7 @@ import { z } from "zod";
 import { base } from "../__core/app";
 import { db } from "../database";
 import * as schema from "../database/schema";
+import { engineEnabled } from "../env";
 import { runScan, scannerRunning } from "../engine/scanner";
 import { getSettings } from "../engine/store";
 import { formatSignal, publishSignal } from "../engine/telegram";
@@ -71,12 +72,24 @@ export const signals = {
       .from(schema.subscribers)
       .where(eq(schema.subscribers.isActive, true));
 
+    /**
+     * Движок живёт на хостинге, а дашборд — отдельный процесс, поэтому
+     * своего таймера у него нет. Считаем сканер живым, если проход в базе
+     * свежее двух с половиной интервалов: так дашборд видит движок где угодно.
+     */
+    const engineHere = engineEnabled() && scannerRunning();
+    const staleAfterMs = settings.scanIntervalSec * 2500;
+    const lastRunAgoMs = lastRun ? Date.now() - lastRun.startedAt.getTime() : null;
+    const engineRemote =
+      !engineHere && lastRunAgoMs !== null && lastRunAgoMs < staleAfterMs;
+
     return {
       totalSignals: total?.value ?? 0,
       signalsToday: today?.value ?? 0,
       callsToday: calls?.value ?? 0,
       putsToday: (today?.value ?? 0) - (calls?.value ?? 0),
-      scannerRunning: scannerRunning(),
+      scannerRunning: engineHere || engineRemote,
+      engineLocation: engineHere ? "local" : engineRemote ? "remote" : "none",
       subscribers: subs?.value ?? 0,
       settings,
       lastRun: lastRun ?? null,
@@ -100,7 +113,12 @@ export const signals = {
   ),
 
   /** Ручной проход сканера — кнопка «Сканировать сейчас». */
-  scanNow: base.handler(() => runScan()),
+  /**
+   * Ручной проход. Публикуем только если движок наш: на дашборде без движка
+   * (ENGINE_ENABLED=0) это сухой прогон — покажет кандидатов, но не создаст
+   * сигналов и не отправит их в Telegram, иначе вышли бы дубли.
+   */
+  scanNow: base.handler(() => runScan({ publish: engineEnabled() })),
 
   /** Повторная отправка сигнала в Telegram. */
   resend: base.input(z.object({ id: z.number() })).handler(async ({ input }) => {

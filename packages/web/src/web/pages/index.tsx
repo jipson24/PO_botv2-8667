@@ -67,7 +67,11 @@ function Index() {
                   o?.scannerRunning ? "bg-call" : "bg-put",
                 )}
               />
-              {o?.scannerRunning ? "сканер активен" : "сканер остановлен"}
+              {o?.scannerRunning
+                ? o.engineLocation === "remote"
+                  ? "сканер активен · хостинг"
+                  : "сканер активен"
+                : "сканер остановлен"}
             </Chip>
             <Button
               size="sm"

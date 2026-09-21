@@ -4,9 +4,10 @@ import * as schema from "../database/schema";
 import { getCandleSet, isStale, toFeedSymbol } from "../market/candles";
 import { ssidLooksLikeCookie } from "../market/po-feed";
 import { getAssets } from "../market/pocket-option";
+import { kyivHour } from "../lib/day";
 import { analyze } from "../strategy/analyze";
 import { buildSnapshot } from "../strategy/snapshot";
-import { getSettings } from "./store";
+import { getSettings, isExcluded, parseBlockedHours, parseExcluded } from "./store";
 import { publishSignal } from "./telegram";
 
 export interface ScanOutcome {
@@ -88,7 +89,12 @@ const MIN_ENTRY_WINDOW_MS = 120_000;
 
 async function watchlist(): Promise<{ list: (typeof schema.assets.$inferSelect)[]; fallback: boolean }> {
   const settings = await getSettings();
-  const rows = await db.select().from(schema.assets).orderBy(desc(schema.assets.payout));
+  const all = await db.select().from(schema.assets).orderBy(desc(schema.assets.payout));
+
+  // Ручной чёрный список пар (настройки) — убираем до всех прочих фильтров,
+  // чтобы исключённые символы не попали ни в диапазон, ни в резервный пул.
+  const excluded = parseExcluded(settings.excludedSymbols);
+  const rows = excluded.size ? all.filter((a) => !isExcluded(a.symbol, excluded)) : all;
 
   const inRange = rows.filter(
     (a) =>
@@ -136,6 +142,7 @@ export async function runScan(opts: { publish?: boolean } = {}): Promise<ScanOut
   const startedAt = new Date();
   const started = Date.now();
   const settings = await getSettings();
+  const blockedHours = parseBlockedHours(settings.blockedHours);
   const skipped: ScanOutcome["skipped"] = [];
   const candidates: ScanOutcome["candidates"] = [];
   let scanned = 0;
@@ -212,6 +219,18 @@ export async function runScan(opts: { publish?: boolean } = {}): Promise<ScanOut
       // поэтому и экспирацию считаем от этого момента, а не от времени вставки.
       const entryAt = new Date((set.lastCandleAt + 300) * 1000);
       const expiresAt = new Date(entryAt.getTime() + result.expirySeconds * 1000);
+
+      // Закрытые часы считаем по времени входа, а не по «сейчас»: в статистике
+      // группировка идёт по entry_at, и фильтр должен резать ровно то же.
+      const hour = kyivHour(entryAt);
+      if (blockedHours.has(hour)) {
+        skipped.push({
+          symbol: asset.symbol,
+          reason: `час ${String(hour).padStart(2, "0")}:00 по Киеву закрыт настройками`,
+        });
+        continue;
+      }
+
       const leftMs = expiresAt.getTime() - Date.now();
       if (leftMs < MIN_ENTRY_WINDOW_MS) {
         skipped.push({

@@ -11,6 +11,8 @@ interface Draft {
   minPayout: number;
   maxPayout: number;
   cooldownMinutes: number;
+  excludedSymbols: string;
+  blockedHours: string;
 }
 
 export function SettingsPanel() {
@@ -27,6 +29,8 @@ export function SettingsPanel() {
       minPayout: settings.minPayout,
       maxPayout: settings.maxPayout,
       cooldownMinutes: settings.cooldownMinutes,
+      excludedSymbols: settings.excludedSymbols ?? "",
+      blockedHours: settings.blockedHours ?? "",
     });
   }, [settings, draft]);
 
@@ -47,7 +51,17 @@ export function SettingsPanel() {
     draft.scanIntervalSec !== settings.scanIntervalSec ||
     draft.minPayout !== settings.minPayout ||
     draft.maxPayout !== settings.maxPayout ||
-    draft.cooldownMinutes !== settings.cooldownMinutes;
+    draft.cooldownMinutes !== settings.cooldownMinutes ||
+    draft.excludedSymbols !== (settings.excludedSymbols ?? "") ||
+    draft.blockedHours !== (settings.blockedHours ?? "");
+
+  const excludedCount = draft.excludedSymbols
+    .split(/[,\s;]+/)
+    .filter(Boolean).length;
+
+  const blockedCount = draft.blockedHours
+    .split(/[,\s;]+/)
+    .filter(Boolean).length;
 
   return (
     <div className="space-y-4">
@@ -111,6 +125,49 @@ export function SettingsPanel() {
             hint="Сколько не повторять сигнал по одной и той же паре."
             onChange={(v) => setDraft({ ...draft, cooldownMinutes: v })}
           />
+
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[12px] font-medium">Не сканировать пары</span>
+              <span className="num text-[11px] text-muted-foreground">
+                {excludedCount} шт.
+              </span>
+            </div>
+            <textarea
+              aria-label="Пары, которые не сканировать"
+              value={draft.excludedSymbols}
+              spellCheck={false}
+              rows={2}
+              placeholder="SYPUSD_otc, IRRUSD_otc"
+              onChange={(e) => setDraft({ ...draft, excludedSymbols: e.target.value })}
+              className="num w-full resize-y rounded-lg border border-border bg-elevated/50 px-3 py-2 text-[12px] outline-none focus:border-gold/60"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Символы через запятую. Такие пары полностью выпадают из watchlist — ни в диапазоне
+              payout, ни в резерве. Регистр не важен.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[12px] font-medium">Закрытые часы (Киев)</span>
+              <span className="num text-[11px] text-muted-foreground">
+                {blockedCount} ч.
+              </span>
+            </div>
+            <input
+              aria-label="Закрытые часы по Киеву"
+              value={draft.blockedHours}
+              spellCheck={false}
+              placeholder="5, 6, 7"
+              onChange={(e) => setDraft({ ...draft, blockedHours: e.target.value })}
+              className="num w-full rounded-lg border border-border bg-elevated/50 px-3 py-2 text-[12px] outline-none focus:border-gold/60"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Часы 0–23 через запятую. В эти часы сигналы не публикуются — час считается по
+              времени входа. По замеру 21.09 часы 05–07 давали винрейт 20–29%.
+            </p>
+          </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
             <Toggle

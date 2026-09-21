@@ -154,6 +154,14 @@ function extract(payload: unknown, period: number): { asset: string | null; cand
   return { asset, candles: [] };
 }
 
+/**
+ * Числовые readyState вместо статики глобального WebSocket: в Node 20 глобального
+ * WebSocket нет вовсе (появился в 22), а сокет там — из пакета `ws`. Значения
+ * фиксированы стандартом, так что константы безопаснее ссылки на глобал.
+ */
+const WS_CONNECTING = 0;
+const WS_OPEN = 1;
+
 let socket: WebSocket | null = null;
 let state: FeedState = "idle";
 let stateNote = "";
@@ -309,8 +317,8 @@ function hasLatestClosed(candles: Candle[], period: number): boolean {
 }
 
 function connect(): Promise<void> {
-  if (socket && socket.readyState === WebSocket.OPEN && state === "live") return Promise.resolve();
-  if (socket && (socket.readyState === WebSocket.CONNECTING || state === "connecting")) {
+  if (socket && socket.readyState === WS_OPEN && state === "live") return Promise.resolve();
+  if (socket && (socket.readyState === WS_CONNECTING || state === "connecting")) {
     return Promise.resolve();
   }
 
@@ -461,7 +469,7 @@ function connect(): Promise<void> {
   return new Promise((resolve) => {
     const started = Date.now();
     const check = setInterval(() => {
-      const open = ws.readyState === WebSocket.OPEN;
+      const open = ws.readyState === WS_OPEN;
       // Ждём именно `successauth`: до него котировки не отдаются.
       if ((open && state === "live") || Date.now() - started > CONNECT_TIMEOUT_MS) {
         clearInterval(check);
@@ -495,7 +503,7 @@ export async function poCandles(asset: string, period = 300, bars = 300): Promis
   keepAlive = true;
   await connect();
   const ws = socket;
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
+  if (!ws || ws.readyState !== WS_OPEN) {
     throw new Error(`PO-фид недоступен (${stateNote || state})`);
   }
   await waitForSkew();

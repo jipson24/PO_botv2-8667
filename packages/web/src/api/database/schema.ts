@@ -109,12 +109,34 @@ export const settings = sqliteTable("settings", {
   minConfidence: integer("min_confidence").notNull().default(80),
   scanIntervalSec: integer("scan_interval_sec").notNull().default(60),
   minPayout: integer("min_payout").notNull().default(82),
-  maxPayout: integer("max_payout").notNull().default(92),
+  /**
+   * Верхняя граница payout. Высокий payout — метка плохо предсказуемой пары:
+   * по замеру 21.09.2026 зона 90%+ дала 48% винрейта на 150 сделках при пороге
+   * безубытка 52.1%, тогда как 85–89% дали 59.3%. Поэтому граница 89, не 95.
+   */
+  maxPayout: integer("max_payout").notNull().default(89),
   cooldownMinutes: integer("cooldown_minutes").notNull().default(15),
   telegramEnabled: integer("telegram_enabled", { mode: "boolean" }).notNull().default(true),
   /** Пока OTC заблокированы (нет cookie ssid) — сканировать обычные пары с публичным фидом. */
   fallbackPairs: integer("fallback_pairs", { mode: "boolean" }).notNull().default(true),
   scannerEnabled: integer("scanner_enabled", { mode: "boolean" }).notNull().default(true),
+  /**
+   * SSID Pocket Option, заданный на ходу (через дашборд или /api/ops/ssid).
+   * Живёт в БД, а не в .env: сессия привязана к IP и истекает, и на хостинге
+   * её надо менять без пересборки. Пусто — берётся значение из .env.
+   */
+  poSsid: text("po_ssid"),
+  /**
+   * Пары, которые сканер игнорирует, через запятую (например экзотика
+   * SYPUSD_otc, IRRUSD_otc). Сравнение без учёта регистра.
+   */
+  excludedSymbols: text("excluded_symbols").notNull().default("SYPUSD_otc,IRRUSD_otc"),
+  /**
+   * Киевские часы, в которые сигналы не публикуются, через запятую.
+   * По замеру 21.09.2026 часы 05–07 давали винрейт 20–29% на 28 сделках —
+   * утренний переход между сессиями с рваной ликвидностью.
+   */
+  blockedHours: text("blocked_hours").notNull().default("5,6,7"),
   updatedAt: integer("updated_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

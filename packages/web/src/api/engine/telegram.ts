@@ -57,26 +57,54 @@ async function call<T>(method: string, body: Record<string, unknown>): Promise<T
   }
 }
 
-export async function sendMessage(chatId: string, text: string) {
+type Keyboard = { inline_keyboard: { text: string; url: string }[][] };
+
+export async function sendMessage(chatId: string, text: string, keyboard?: Keyboard) {
   return call<{ message_id: number }>("sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
+    ...(keyboard ? { reply_markup: keyboard } : {}),
   });
 }
 
-export async function broadcast(text: string) {
+export async function broadcast(text: string, keyboard?: Keyboard) {
   const subs = await activeSubscribers();
   let sent = 0;
   for (const sub of subs) {
-    const res = await sendMessage(sub.chatId, text);
+    const res = await sendMessage(sub.chatId, text, keyboard);
     if (res) sent += 1;
   }
   return sent;
 }
 
 type Signal = typeof schema.signals.$inferSelect;
+
+/**
+ * Кнопки «открыть пару» под сигналом.
+ *
+ * Терминал живёт по /cabinet/quick-high-low (демо — /cabinet/demo-quick-high-low),
+ * символ передаём как ?asset=. Параметр переживает редирект на логин, так что
+ * ссылка рабочая и для незалогиненного: сначала вход, потом терминал.
+ *
+ * Домен один на все устройства и это осознанно: у pocketoption.com есть
+ * assetlinks.json и apple-app-site-association, поэтому на телефоне с
+ * установленным приложением ссылка открывается в нём, а без него — в браузере.
+ * Отдельная мобильная ссылка (m.pocketoption.com) такой переход бы сломала.
+ */
+export function pairKeyboard(symbol: string): Keyboard {
+  const asset = encodeURIComponent(symbol);
+  const base = "https://pocketoption.com/en/cabinet";
+  return {
+    inline_keyboard: [
+      [
+        { text: `📈 Открыть ${symbol}`, url: `${base}/quick-high-low/?asset=${asset}` },
+        { text: "🧪 Демо", url: `${base}/demo-quick-high-low/?asset=${asset}` },
+      ],
+    ],
+  };
+}
 
 /** Всё время в сообщениях — киевское (UTC+3 летом, UTC+2 зимой, DST учитывает IANA-зона). */
 export const TZ = "Europe/Kyiv";
@@ -238,7 +266,7 @@ async function handleCommand(
         await sendMessage(chatId, "Сигналов ещё не было — сканер ждёт подходящий сетап.");
         return;
       }
-      await sendMessage(chatId, formatSignal(row));
+      await sendMessage(chatId, formatSignal(row), pairKeyboard(row.symbol));
       return;
     }
     case "/scan": {
@@ -440,7 +468,7 @@ if (poll.running) {
 export async function publishSignal(signal: Signal) {
   const settings = await getSettings();
   if (!settings.telegramEnabled) return 0;
-  const sent = await broadcast(formatSignal(signal));
+  const sent = await broadcast(formatSignal(signal), pairKeyboard(signal.symbol));
   if (sent > 0) {
     await db
       .update(schema.signals)

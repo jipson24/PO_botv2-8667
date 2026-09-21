@@ -16,6 +16,8 @@ const patch = z.object({
   telegramEnabled: z.boolean().optional(),
   scannerEnabled: z.boolean().optional(),
   fallbackPairs: z.boolean().optional(),
+  excludedSymbols: z.string().max(2000).optional(),
+  blockedHours: z.string().max(200).optional(),
 });
 
 export const config = {

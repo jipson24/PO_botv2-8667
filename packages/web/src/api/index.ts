@@ -1,6 +1,7 @@
 import type { RouterClient } from "@orpc/server";
 import { createApp } from "./__core/app";
 import { boot } from "./engine/boot";
+import { registerOps } from "./ops";
 import { config } from "./routes/config";
 import { pairs } from "./routes/pairs";
 import { ping } from "./routes/ping";
@@ -26,6 +27,10 @@ export type AppRouter = typeof router;
 export type AppRouterClient = RouterClient<AppRouter>;
 
 const app = createApp(router);
+
+// Служебный канал /api/ops/* — разбор архива и логов на хостинге без SSH.
+// Молчит (503), пока не задан OPS_TOKEN.
+registerOps(app);
 
 // Движок сигналов: сканер Pocket Option + Telegram-бот. Идемпотентно.
 boot();

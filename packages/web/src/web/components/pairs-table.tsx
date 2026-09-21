@@ -105,6 +105,9 @@ export function PairsTable() {
                     <div className="text-[10px] text-muted-foreground">
                       {p.name}
                       {p.isOtc ? " · OTC" : ""}
+                      {p.excluded ? (
+                        <span className="text-put"> · не сканируем</span>
+                      ) : null}
                     </div>
                   </td>
                   <td className="px-2 py-2 text-right">

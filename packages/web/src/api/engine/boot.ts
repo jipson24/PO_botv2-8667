@@ -4,7 +4,7 @@ import { startFeedAlerts } from "./feed-alerts";
 import { startOutcomeResolver } from "./outcomes";
 import { startDailyReporter } from "./daily-report";
 import { botConfigured, sendMessage, startPolling } from "./telegram";
-import { envStr } from "../env";
+import { engineEnabled, envStr, setEnvOverride } from "../env";
 
 const FLAG = "__pocketSignalBotBooted";
 const globalScope = globalThis as unknown as Record<string, boolean | undefined>;
@@ -14,12 +14,22 @@ const globalScope = globalThis as unknown as Record<string, boolean | undefined>
  * Защищён флагом в globalThis, чтобы HMR Vite не поднимал вторую копию.
  */
 export function boot() {
+  if (!engineEnabled()) {
+    console.warn(
+      "[boot] ENGINE_ENABLED=0 — движок не запущен: этот процесс только отдаёт дашборд и читает базу",
+    );
+    return;
+  }
   if (globalScope[FLAG]) return;
   globalScope[FLAG] = true;
 
   void (async () => {
     try {
       const settings = await getSettings();
+
+      // SSID из БД важнее .env: на хостинге сессию PO меняют через
+      // /api/ops/ssid, и после перезапуска она должна подхватиться сама.
+      if (settings.poSsid) setEnvOverride("POCKET_OPTION_SSID", settings.poSsid);
 
       if (botConfigured()) {
         startPolling();
