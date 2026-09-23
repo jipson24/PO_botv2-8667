@@ -7,11 +7,11 @@
  * статистика с отчётами опиралась бы на пустоту.
  */
 
-import { and, asc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, asc, eq, isNull, isNotNull, lt, or } from "drizzle-orm";
 import { db } from "../database";
 import * as schema from "../database/schema";
 import { kyivDay } from "../lib/day";
-import { priceAt } from "../market/history";
+import { minuteWindow, priceAt } from "../market/history";
 
 type Signal = typeof schema.signals.$inferSelect;
 
@@ -21,6 +21,19 @@ const GRACE_MS = 90_000;
 const GIVE_UP_MS = 24 * 3600_000;
 /** Сколько сигналов разбираем за проход: каждый — запрос истории. */
 const BATCH = 25;
+
+/**
+ * Запас баров до входа и после экспирации в пост-входном окне (минуты).
+ * До входа — с перекрытием того, что уже есть в `snapshot.candles`, чтобы
+ * склеить окна без дырки на стыке. После экспирации — под будущие индикаторы.
+ */
+const POSTENTRY_BEFORE_MIN = 15;
+const POSTENTRY_AFTER_MIN = 10;
+/** Ждём столько после экспирации, чтобы фид точно догнал момент выхода + запас. */
+const POSTENTRY_CAPTURE_DELAY_MS = (POSTENTRY_AFTER_MIN + 3) * 60_000;
+/** Через сутки без данных бросаем попытку — иначе висит вечно как pending. */
+const POSTENTRY_GIVE_UP_MS = 24 * 3600_000;
+const POSTENTRY_BATCH = 25;
 
 export type Outcome = "pending" | "win" | "loss" | "draw" | "unknown";
 
@@ -164,6 +177,110 @@ export async function backfillTradeDays(): Promise<number> {
   return rows.length;
 }
 
+export const POSTENTRY_VERSION = 1;
+
+export interface PostentryCandles {
+  version: number;
+  capturedAt: string;
+  source: string;
+  from: number;
+  to: number;
+  candles: { time: number; open: number; high: number; low: number; close: number }[];
+}
+
+export interface PostentryReport {
+  checked: number;
+  captured: number;
+  waiting: number;
+  gaveUp: number;
+}
+
+/**
+ * Дозаписывает сырые минутные бары после экспирации сделкам, у которых уже
+ * известен исход, но пост-входное окно ещё не собрано. `snapshot` не трогает —
+ * пишет только в `postentryCandles`, отдельно и один раз на сигнал.
+ */
+export async function capturePostEntryCandles(limit = POSTENTRY_BATCH): Promise<PostentryReport> {
+  const cutoff = new Date(Date.now() - POSTENTRY_CAPTURE_DELAY_MS);
+  const rows = await db
+    .select()
+    .from(schema.signals)
+    .where(
+      and(
+        or(
+          eq(schema.signals.outcome, "win"),
+          eq(schema.signals.outcome, "loss"),
+          eq(schema.signals.outcome, "draw"),
+        ),
+        isNull(schema.signals.postentryCapturedAt),
+        isNotNull(schema.signals.snapshot),
+        lt(schema.signals.expiresAt, cutoff),
+      ),
+    )
+    .orderBy(asc(schema.signals.expiresAt))
+    .limit(limit);
+
+  const report: PostentryReport = { checked: rows.length, captured: 0, waiting: 0, gaveUp: 0 };
+
+  for (const row of rows) {
+    const entryEpoch = Math.floor(row.entryAt.getTime() / 1000);
+    const expiryEpoch = Math.floor(row.expiresAt.getTime() / 1000);
+    const from = entryEpoch - POSTENTRY_BEFORE_MIN * 60;
+    const to = expiryEpoch + POSTENTRY_AFTER_MIN * 60;
+    const overdue = Date.now() - row.expiresAt.getTime() > POSTENTRY_GIVE_UP_MS;
+
+    let window: Awaited<ReturnType<typeof minuteWindow>> = null;
+    let error = "";
+    try {
+      window = await minuteWindow(row.symbol, from, to);
+    } catch (err) {
+      error = (err as Error).message;
+    }
+
+    if (!window) {
+      if (!overdue) {
+        report.waiting += 1;
+        continue;
+      }
+      report.gaveUp += 1;
+      console.error(
+        `[outcomes] ${row.symbol} #${row.id}: пост-входные бары не собраны — ${error || "фид не дотянул историю"}`,
+      );
+      continue;
+    }
+
+    const payload: PostentryCandles = {
+      version: POSTENTRY_VERSION,
+      capturedAt: new Date().toISOString(),
+      source: window.source,
+      from,
+      to,
+      candles: window.candles.map((c) => ({
+        time: c.time,
+        open: Number(c.open.toFixed(6)),
+        high: Number(c.high.toFixed(6)),
+        low: Number(c.low.toFixed(6)),
+        close: Number(c.close.toFixed(6)),
+      })),
+    };
+
+    await db
+      .update(schema.signals)
+      .set({ postentryCandles: payload, postentryCapturedAt: new Date() })
+      .where(eq(schema.signals.id, row.id));
+    report.captured += 1;
+  }
+
+  if (report.captured || report.gaveUp) {
+    console.log(
+      `[outcomes] пост-входные бары: собрано ${report.captured}` +
+        `${report.waiting ? ` · ${report.waiting} ждут фид` : ""}` +
+        `${report.gaveUp ? ` · ${report.gaveUp} без данных` : ""}`,
+    );
+  }
+  return report;
+}
+
 interface ResolverState {
   timer: ReturnType<typeof setInterval> | null;
   running: boolean;
@@ -180,6 +297,7 @@ async function tick() {
   state.running = true;
   try {
     await resolvePending();
+    await capturePostEntryCandles();
   } catch (error) {
     console.error("[outcomes] проход упал:", (error as Error).message);
   } finally {

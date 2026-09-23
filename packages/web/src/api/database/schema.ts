@@ -47,6 +47,16 @@ export const signals = sqliteTable(
     factors: text("factors", { mode: "json" }),
     /** Полный слепок входа: свечи, индикаторы, настройки движка на момент сигнала. */
     snapshot: text("snapshot", { mode: "json" }),
+    /**
+     * Сырые минутные бары от входа до экспирации + запас после — дозаписываются
+     * отдельным проходом через POST_CAPTURE_DELAY_MS после экспирации, когда фид
+     * уже догнал момент выхода. `snapshot` при этом не трогается: он immutable
+     * с момента сигнала, а это отдельная, поздняя добавка для симулятора —
+     * позволяет досчитать индикатор, которого не было на момент входа.
+     */
+    postentryCandles: text("postentry_candles", { mode: "json" }),
+    /** Когда пост-входные бары фактически записаны. Пусто — ещё не собраны. */
+    postentryCapturedAt: integer("postentry_captured_at", { mode: "timestamp" }),
     /** Киевский торговый день входа, «2026-09-20» — по нему группируется архив. */
     tradeDay: text("trade_day"),
     /** pending | win | loss | draw | unknown */

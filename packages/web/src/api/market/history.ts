@@ -140,3 +140,27 @@ export async function priceAt(poSymbol: string, at: number): Promise<PriceAt | n
 
   return { price: best.close, at: closedAt, driftSec, source };
 }
+
+/**
+ * Сырые минутные бары в окне [from, to] — для дозаписи слепка сделки после
+ * резолва (симулятору нужны бары и до, и после точки входа, не только цена
+ * экспирации). `to` обычно = момент экспирации + запас на будущие индикаторы.
+ *
+ * Возвращает null, если фид ещё не дотянул историю до `to` — вызывающая
+ * сторона должна повторить попытку позже, а не сохранять частичное окно.
+ */
+export async function minuteWindow(
+  poSymbol: string,
+  from: number,
+  to: number,
+): Promise<{ candles: Candle[]; source: string } | null> {
+  const { candles, source } = await minuteCandles(poSymbol, depthFor(to));
+  if (!candles.length) return null;
+
+  const covered = candles.at(-1)!.time + PERIOD;
+  if (covered < to) return null;
+
+  const window = candles.filter((c) => c.time >= from && c.time <= to);
+  if (!window.length) return null;
+  return { candles: window, source };
+}

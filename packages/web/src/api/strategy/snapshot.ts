@@ -13,7 +13,14 @@ import type { Analysis, Factor } from "./analyze";
 import type { Candle } from "./indicators";
 import type { Level, MarketStructure } from "./structure";
 
-export const SNAPSHOT_VERSION = 2;
+/**
+ * v3: с этой версии сигналы, дошедшие до исхода, дополнительно получают
+ * сырые минутные бары после экспирации — в колонке `signals.postentryCandles`,
+ * отдельным поздним проходом (см. `engine/outcomes.ts#capturePostEntryCandles`).
+ * Сам объект снапшота не меняет форму, только факт: у v3+ есть шанс получить
+ * пост-входное окно, у v2 и старее — нет, симулятору сверяться по этому полю.
+ */
+export const SNAPSHOT_VERSION = 3;
 
 export interface EntrySnapshot {
   version: number;
