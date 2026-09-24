@@ -242,7 +242,15 @@ export async function capturePostEntryCandles(limit = POSTENTRY_BATCH): Promise<
         report.waiting += 1;
         continue;
       }
+      // Без данных навсегда (глубина фида ограничена/пара не покрыта) — помечаем
+      // попытку завершённой, иначе эта же строка блокирует очередь бесконечно:
+      // выбирается каждый проход, а лимит BATCH никогда не доходит до сигналов,
+      // у которых окно реально достижимо.
       report.gaveUp += 1;
+      await db
+        .update(schema.signals)
+        .set({ postentryCapturedAt: new Date() })
+        .where(eq(schema.signals.id, row.id));
       console.error(
         `[outcomes] ${row.symbol} #${row.id}: пост-входные бары не собраны — ${error || "фид не дотянул историю"}`,
       );
