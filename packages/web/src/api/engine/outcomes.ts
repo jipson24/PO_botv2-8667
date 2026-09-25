@@ -12,6 +12,7 @@ import { db } from "../database";
 import * as schema from "../database/schema";
 import { kyivDay } from "../lib/day";
 import { minuteWindow, priceAt } from "../market/history";
+import { isOtc } from "../market/candles";
 
 type Signal = typeof schema.signals.$inferSelect;
 
@@ -33,6 +34,15 @@ const POSTENTRY_AFTER_MIN = 10;
 const POSTENTRY_CAPTURE_DELAY_MS = (POSTENTRY_AFTER_MIN + 3) * 60_000;
 /** Через сутки без данных бросаем попытку — иначе висит вечно как pending. */
 const POSTENTRY_GIVE_UP_MS = 24 * 3600_000;
+/**
+ * OTC-пары не имеют внешнего фолбэка на Yahoo (см. `market/history.ts`) —
+ * единственный источник для них — WS-фид Pocket Option, глубина которого
+ * жёстко ограничена ~15 часами (`PAGE_BARS × MAX_PAGES` в `po-feed.ts`). Если
+ * окно не собралось за пару часов, оно физически недостижимо и дальше ждать
+ * бессмысленно — OTC-строки иначе забивают весь батч и блокируют обычные
+ * пары, у которых Yahoo реально может дособрать историю за сутки.
+ */
+const POSTENTRY_GIVE_UP_MS_OTC = 120 * 60_000;
 const POSTENTRY_BATCH = 25;
 
 export type Outcome = "pending" | "win" | "loss" | "draw" | "unknown";
@@ -227,7 +237,8 @@ export async function capturePostEntryCandles(limit = POSTENTRY_BATCH): Promise<
     const expiryEpoch = Math.floor(row.expiresAt.getTime() / 1000);
     const from = entryEpoch - POSTENTRY_BEFORE_MIN * 60;
     const to = expiryEpoch + POSTENTRY_AFTER_MIN * 60;
-    const overdue = Date.now() - row.expiresAt.getTime() > POSTENTRY_GIVE_UP_MS;
+    const giveUpMs = isOtc(row.symbol) ? POSTENTRY_GIVE_UP_MS_OTC : POSTENTRY_GIVE_UP_MS;
+    const overdue = Date.now() - row.expiresAt.getTime() > giveUpMs;
 
     let window: Awaited<ReturnType<typeof minuteWindow>> = null;
     let error = "";
